@@ -1,11 +1,14 @@
 ## Interface: 30300
 ## Title: Action Bar Saver 2
+## Title-ruRU: Action Bar Saver 2
 ## Notes: Saves and restores your action bars
-## Author: Shadowed
+## Notes-ruRU: Сохраняет и восстанавливает ваши панели действий
+## Author: Shadowed & Accidev
 ## SavedVariables: ActionBarSaverDB
 ## LoadManagers: AddonLoader
 ## X-LoadOn-Slash: /actionbarsaver, /abs
 
 localization.enUS.lua
+localization.ruRU.lua
 
 ActionBarSaver.lua
