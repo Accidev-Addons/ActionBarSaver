@@ -74,4 +74,8 @@ select(2, ...).locals = {
 	["HUNTER"] = "Hunter",
 	["ROGUE"] = "Rogue",
 	["DEATHKNIGHT"] = "Death Knight",
+	
+	["Are you sure you want to delete profile %s?"] = "Are you sure you want to delete profile %s?",
+	["Delete Profile"] = "Delete Profile",
+	["This action cannot be undone."] = "This action cannot be undone.",
 }

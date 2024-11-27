@@ -440,8 +440,7 @@ SlashCmdList["ABS"] = function(msg)
 
 	-- Delete profile
 	elseif( cmd == "delete" ) then
-		self.db.sets[playerClass][arg] = nil
-		self:Print(string.format(L["Deleted saved profile %s."], arg))
+		self:DeleteProfile(arg)
 	
 	-- List profiles
 	elseif( cmd == "list" ) then
@@ -521,3 +520,22 @@ frame:SetScript("OnEvent", function(self, event, addon)
 		self:UnregisterEvent("ADDON_LOADED")
 	end
 end)
+
+function ABS:DeleteProfile(name)
+    StaticPopupDialogs["ABS_CONFIRM_DELETE"] = {
+        text = string.format(L["Are you sure you want to delete profile %s?"] .. "\n\n" .. L["This action cannot be undone."], name),
+        button1 = YES,
+        button2 = NO,
+        OnAccept = function()
+            self.db.sets[playerClass][name] = nil
+            self:Print(string.format(L["Deleted saved profile %s."], name))
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+        showAlert = true,
+        title = L["Delete Profile"],
+    }
+    StaticPopup_Show("ABS_CONFIRM_DELETE")
+end
