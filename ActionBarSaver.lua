@@ -9,13 +9,42 @@ local L = ABS.locals
 local restoreErrors, spellCache, macroCache, macroNameCache, highestRanks = {}, {}, {}, {}, {}
 local iconCache, playerClass
 
-local MAX_MACROS = 54
-local MAX_CHAR_MACROS = 18
-local MAX_GLOBAL_MACROS = 36
-local MAX_ACTION_BUTTONS = 144
-local POSSESSION_START = 121
-local POSSESSION_END = 132
+local CONST = {
+	MAX_MACROS = 54,
+	MAX_CHAR_MACROS = 18,
+	MAX_GLOBAL_MACROS = 36,
+	MAX_ACTION_BUTTONS = 360,
+	POSSESSION_START = 121,
+	POSSESSION_END = 132
+}
 
+local GetSpellName = GetSpellName
+local GetMacroInfo = GetMacroInfo
+local GetActionInfo = GetActionInfo
+local ClearCursor = ClearCursor
+local PickupAction = PickupAction
+local PlaceAction = PlaceAction
+local string_split = string.split
+local table_wipe = table.wipe
+
+local function IsElvUILoaded()
+    return IsAddOnLoaded("ElvUI")
+end
+
+
+local function GetElvUIBarButton(barName, buttonIndex)
+    if not IsElvUILoaded() then return end
+    local E = unpack(ElvUI)
+    local AB = E:GetModule('ActionBars')
+    if not AB or not AB.handledBars[barName] then return end
+    return AB.handledBars[barName].buttons[buttonIndex]
+end
+
+local function GetElvUIActionID(barNumber, buttonIndex)
+    local button = GetElvUIBarButton("bar"..barNumber, buttonIndex)
+    if not button then return end
+    return button.action
+end
 
 function ABS:OnInitialize()
 	local defaults = {
@@ -65,15 +94,19 @@ function ABS:SaveProfile(name)
 	self.db.sets[playerClass][name] = self.db.sets[playerClass][name] or {}
 	local set = self.db.sets[playerClass][name]
 	
-	for actionID=1, MAX_ACTION_BUTTONS do
+	-- Сначала сохраняем стандартные панели
+	for actionID=1, CONST.MAX_ACTION_BUTTONS do
 		set[actionID] = nil
 		
 		local type, id, subType, extraID = GetActionInfo(actionID)
-		if( type and id and ( actionID < POSSESSION_START or actionID > POSSESSION_END ) ) then
+		if( type and id and ( actionID < CONST.POSSESSION_START or actionID > CONST.POSSESSION_END ) ) then
 			-- DB Format: <type>|<id>|<binding>|<name>|<extra ...>
 			-- Save a companion
 			if( type == "companion" ) then
-				set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, id, "", name, subType, extraID)
+				local spellID = select(2, GetCompanionInfo(subType, id))
+				if spellID then
+					set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+				end
 			-- Save an equipment set
 			elseif( type == "equipmentset" ) then
 				set[actionID] = string.format("%s|%s|%s", type, id, "")
@@ -91,6 +124,35 @@ function ABS:SaveProfile(name)
 				local name, icon, macro = GetMacroInfo(id)
 				if( name and icon and macro ) then
 					set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, actionID, "", self:CompressText(name), icon, self:CompressText(macro))
+				end
+			end
+		end
+	end
+	
+	-- Теперь сохраняем панели ElvUI
+	if IsElvUILoaded() then
+		for bar=7, 10 do
+			for btn=1, 12 do
+				local actionID = ((bar-1) * 12) + btn + 132
+				local elvuiActionID = GetElvUIActionID(bar, btn)
+				
+				if elvuiActionID then
+					local type, id, subType, extraID = GetActionInfo(elvuiActionID)
+					if type and id then
+						-- Используем ту же логику сохранения
+						if type == "companion" then
+							local spellID = select(2, GetCompanionInfo(subType, id))
+							if spellID then
+								set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+							end
+						elseif type == "spell" and id > 0 then
+							local spell, rank = GetSpellName(id, BOOKTYPE_SPELL)
+							if spell then
+								set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, id, "", spell, rank or "", extraID or "")
+							end
+						-- Добавьте остальные типы действий по аналогии
+						end
+					end
 				end
 			end
 		end
@@ -131,12 +193,12 @@ function ABS:RestoreMacros(set)
 			if( not macroID ) then
 				local globalNum, charNum = GetNumMacros()
 				-- Make sure we aren't at the limit
-				if( globalNum == MAX_GLOBAL_MACROS and charNum == MAX_CHAR_MACROS ) then
+				if( globalNum == CONST.MAX_GLOBAL_MACROS and charNum == CONST.MAX_CHAR_MACROS ) then
 					table.insert(restoreErrors, L["Unable to restore macros, you already have 18 global and 18 per character ones created."])
 					break
 
 				-- We ran out of space for per character, so use global
-				elseif( charNum == MAX_CHAR_MACROS ) then
+				elseif( charNum == CONST.MAX_CHAR_MACROS ) then
 					perCharacter = false
 				end
 
@@ -158,7 +220,7 @@ function ABS:RestoreMacros(set)
 	
 	-- Recache macros due to any additions
 	local blacklist = {}
-	for i=1, MAX_MACROS do
+	for i=1, CONST.MAX_MACROS do
 		local name, icon, macro = GetMacroInfo(i)
 		
 		if( name ) then
@@ -176,10 +238,10 @@ function ABS:RestoreMacros(set)
 end
 
 -- Restore a saved profile
-function ABS:RestoreProfile(name, overrideClass)
-	local set = self.db.sets[overrideClass or playerClass][name]
+function ABS:RestoreProfile(name)
+	local set = self.db.sets[playerClass][name]
 	if( not set ) then
-		self:Print(string.format(L["No profile with the name \"%s\" exists."], set))
+		self:Print(string.format(L["No profile with the name \"%s\" exists."], name))
 		return
 	elseif( InCombatLockdown() ) then
 		self:Print(String.format(L["Unable to restore profile \"%s\", you are in combat."], set))
@@ -211,7 +273,7 @@ function ABS:RestoreProfile(name, overrideClass)
 	
 	-- Cache macros
 	local blacklist = {}
-	for i=1, MAX_MACROS do
+	for i=1, CONST.MAX_MACROS do
 		local name, icon, macro = GetMacroInfo(i)
 		
 		if( name ) then
@@ -240,19 +302,17 @@ function ABS:RestoreProfile(name, overrideClass)
 	-- Turn sound off
 	SetCVar("Sound_EnableAllSound", 0)
 
-	for i=1, MAX_ACTION_BUTTONS do
-		if( i < POSSESSION_START or i > POSSESSION_END ) then
-			local type, id = GetActionInfo(i)
-		
-			-- Clear the current spot
-			if( id or type ) then
-				PickupAction(i)
-				ClearCursor()
-			end
-		
-			-- Restore this spot
-			if( set[i] ) then
-				self:RestoreAction(i, string.split("|", set[i]))
+	-- Добавьте обработку панелей ElvUI
+	if IsElvUILoaded() then
+		for bar=7, 10 do
+			for btn=1, 12 do
+				local actionID = ((bar-1) * 12) + btn + 132
+				if set[actionID] then
+					local button = GetElvUIBarButton("bar"..bar, btn)
+					if button then
+						self:RestoreAction(button.action, string.split("|", set[actionID]))
+					end
+				end
 			end
 		end
 	end
@@ -318,9 +378,22 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 			
 	-- Restore a 3.1 saved companion
 	elseif( type == "companion" ) then
-		local critterName, critterType, critterID = ...
-		PickupCompanion(critterType, actionID)
-		if( GetCursorInfo() ~= "companion" ) then
+		local critterName, critterType, critterSpellID = ...
+		-- Найдем правильный ID компаньона по spell ID
+		local numCompanions = GetNumCompanions(critterType)
+		local foundID
+		
+		for i = 1, numCompanions do
+			local _, _, _, _, _, _, _, companionSpellID = GetCompanionInfo(critterType, i)
+			if companionSpellID == tonumber(actionID) then
+				foundID = i
+				break
+			end
+		end
+		
+		if foundID then
+			PickupCompanion(critterType, foundID)
+		else
 			table.insert(restoreErrors, string.format(L["Unable to restore companion \"%s\" to slot #%d, it does not appear to exist yet."], critterName, i))
 			ClearCursor()
 			return
@@ -392,14 +465,14 @@ SlashCmdList["ABS"] = function(msg)
 		
 	-- Profile restoring
 	elseif( cmd == "restore" and arg ~= "" ) then
-		for i=#(restoreErrors), 1, -1 do table.remove(restoreErrors, i) end
+		table_wipe(restoreErrors)
 				
 		if( not self.db.sets[playerClass][arg] ) then
 			self:Print(string.format(L["Cannot restore profile \"%s\", you can only restore profiles saved to your class."], arg))
 			return
 		end
 		
-		self:RestoreProfile(arg, playerClass)
+		self:RestoreProfile(arg)
 		
 	-- Profile renaming
 	elseif( cmd == "rename" and arg ~= "" ) then
@@ -520,6 +593,36 @@ frame:SetScript("OnEvent", function(self, event, addon)
 		self:UnregisterEvent("ADDON_LOADED")
 	end
 end)
+
+local function IsCompatibleClient()
+    local version = select(4, GetBuildInfo())
+    return version >= 30300 and version < 40000
+end
+
+local function CanModifyActionBars()
+    return not InCombatLockdown() 
+        and not UnitIsDeadOrGhost("player")
+        and not GetCurrentKeyBoardFocus()
+end
+
+local tempTable = {}
+local function GetProfileData(name, class)
+    table_wipe(tempTable)
+    return tempTable
+end
+
+local function OnEvent(self, event, ...)
+    if event == "ADDON_LOADED" then
+        if ... == "ActionBarSaver" then
+            ABS:OnInitialize()
+            self:UnregisterEvent("ADDON_LOADED")
+        end
+    elseif event == "PLAYER_LOGOUT" then
+        if ABS.db.autoSave then
+            ABS:SaveProfile("AutoSave")
+        end
+    end
+end
 
 function ABS:DeleteProfile(name)
     StaticPopupDialogs["ABS_CONFIRM_DELETE"] = {

@@ -7,6 +7,8 @@
 ## SavedVariables: ActionBarSaverDB
 ## LoadManagers: AddonLoader
 ## X-LoadOn-Slash: /actionbarsaver, /abs
+## OptionalDeps: ElvUI
+## X-ElvUI-Version: 1.00
 
 localization.enUS.lua
 localization.ruRU.lua
