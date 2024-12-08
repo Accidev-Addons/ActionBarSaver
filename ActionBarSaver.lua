@@ -51,6 +51,7 @@ function ABS:OnInitialize()
 		macro = false,
 		checkCount = false,
 		restoreRank = true,
+		debug = false,
 		spellSubs = {},
 		sets = {}
 	}
@@ -107,6 +108,10 @@ function ABS:SaveProfile(name)
 				if spellID then
 					set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, spellID, "", name, subType, id)
 				end
+				
+				if self.db.debug then
+					self:Debug(string.format("Saving companion: name=%s, spellID=%s, type=%s, id=%s", name or "nil", companionSpellID or "nil", subType or "nil", id or "nil"))
+				end
 			-- Save an equipment set
 			elseif( type == "equipmentset" ) then
 				set[actionID] = string.format("%s|%s|%s", type, id, "")
@@ -144,6 +149,10 @@ function ABS:SaveProfile(name)
 							local spellID = select(2, GetCompanionInfo(subType, id))
 							if spellID then
 								set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+							end
+							
+							if self.db.debug then
+								self:Debug(string.format("Saving companion: name=%s, spellID=%s, type=%s, id=%s", name or "nil", companionSpellID or "nil", subType or "nil", id or "nil"))
 							end
 						elseif type == "spell" and id > 0 then
 							local spell, rank = GetSpellName(id, BOOKTYPE_SPELL)
@@ -379,6 +388,10 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 	-- Restore a 3.1 saved companion
 	elseif( type == "companion" ) then
 		local critterName, critterType, critterSpellID = ...
+		
+		if self.db.debug then
+			self:Debug(string.format("Restoring companion: name=%s, spellID=%s, type=%s", critterName or "nil", companionSpellID or "nil", critterType or "nil"))
+		end
 		-- Найдем правильный ID компаньона по spell ID
 		local numCompanions = GetNumCompanions(critterType)
 		local foundID
@@ -392,8 +405,14 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 		end
 		
 		if foundID then
+			if self.db.debug then
+				self:Debug(string.format("Found companion with ID %s", foundID))
+			end
 			PickupCompanion(critterType, foundID)
 		else
+			if self.db.debug then
+				self:Debug(string.format("Failed to find companion %s", critterName))
+			end
 			table.insert(restoreErrors, string.format(L["Unable to restore companion \"%s\" to slot #%d, it does not appear to exist yet."], critterName, i))
 			ClearCursor()
 			return
@@ -570,6 +589,9 @@ SlashCmdList["ABS"] = function(msg)
 		end
 		
 	-- Halp
+	elseif( cmd == "debug" ) then
+		self.db.debug = not self.db.debug
+		self:Print(self.db.debug and "Debug mode enabled" or "Debug mode disabled")
 	else
 		self:Print(L["Slash commands"])
 		DEFAULT_CHAT_FRAME:AddMessage(L["/abs save <profile> - Saves your current action bar setup under the given profile."])
@@ -641,4 +663,10 @@ function ABS:DeleteProfile(name)
         title = L["Delete Profile"],
     }
     StaticPopup_Show("ABS_CONFIRM_DELETE")
+end
+
+function ABS:Debug(msg)
+    if self.db.debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99ABS Debug|r: " .. msg)
+    end
 end
