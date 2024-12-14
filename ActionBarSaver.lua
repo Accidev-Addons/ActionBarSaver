@@ -104,9 +104,9 @@ function ABS:SaveProfile(name)
 			-- DB Format: <type>|<id>|<binding>|<name>|<extra ...>
 			-- Save a companion
 			if( type == "companion" ) then
-				local spellID = select(2, GetCompanionInfo(subType, id))
-				if spellID then
-					set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+				local name, spellID, icon, _, _, _, _, companionSpellID = GetCompanionInfo(subType, id)
+				if companionSpellID then
+					set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, companionSpellID, "", name, subType, id)
 				end
 				
 				if self.db.debug then
@@ -146,9 +146,9 @@ function ABS:SaveProfile(name)
 					if type and id then
 						-- Используем ту же логику сохранения
 						if type == "companion" then
-							local spellID = select(2, GetCompanionInfo(subType, id))
-							if spellID then
-								set[actionID] = string.format("%s|%s|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+							local name, spellID, icon, _, _, _, _, companionSpellID = GetCompanionInfo(subType, id)
+							if companionSpellID then
+								set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, companionSpellID, "", name, subType, id)
 							end
 							
 							if self.db.debug then
@@ -311,7 +311,22 @@ function ABS:RestoreProfile(name)
 	-- Turn sound off
 	SetCVar("Sound_EnableAllSound", 0)
 
-	-- Добавьте обработку панелей ElvUI
+	for i=1, CONST.MAX_ACTION_BUTTONS do
+		if( i < CONST.POSSESSION_START or i > CONST.POSSESSION_END ) then
+			local type, id = GetActionInfo(i)
+		
+			if( id or type ) then
+				PickupAction(i)
+				ClearCursor()
+			end
+		
+			if( set[i] ) then
+				self:RestoreAction(i, string.split("|", set[i]))
+			end
+		end
+	end
+
+	-- восстанавливаем панели ElvUI
 	if IsElvUILoaded() then
 		for bar=7, 10 do
 			for btn=1, 12 do
@@ -319,6 +334,9 @@ function ABS:RestoreProfile(name)
 				if set[actionID] then
 					local button = GetElvUIBarButton("bar"..bar, btn)
 					if button then
+						PickupAction(button.action)
+						ClearCursor()
+						
 						self:RestoreAction(button.action, string.split("|", set[actionID]))
 					end
 				end
@@ -387,19 +405,21 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 			
 	-- Restore a 3.1 saved companion
 	elseif( type == "companion" ) then
-		local critterName, critterType, critterSpellID = ...
+		local critterName, critterType, critterID = ...
+		local companionSpellID = tonumber(actionID)
 		
 		if self.db.debug then
 			self:Debug(string.format("Restoring companion: name=%s, spellID=%s, type=%s", critterName or "nil", companionSpellID or "nil", critterType or "nil"))
 		end
+		
 		-- Найдем правильный ID компаньона по spell ID
 		local numCompanions = GetNumCompanions(critterType)
 		local foundID
 		
-		for i = 1, numCompanions do
-			local _, _, _, _, _, _, _, companionSpellID = GetCompanionInfo(critterType, i)
-			if companionSpellID == tonumber(actionID) then
-				foundID = i
+		for j = 1, numCompanions do
+			local _, _, _, _, _, _, _, thisSpellID = GetCompanionInfo(critterType, j)
+			if thisSpellID == companionSpellID then
+				foundID = j
 				break
 			end
 		end
