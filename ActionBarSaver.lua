@@ -95,22 +95,29 @@ function ABS:SaveProfile(name)
 	self.db.sets[playerClass][name] = self.db.sets[playerClass][name] or {}
 	local set = self.db.sets[playerClass][name]
 	
-	-- Сначала сохраняем стандартные панели
 	for actionID=1, CONST.MAX_ACTION_BUTTONS do
 		set[actionID] = nil
 		
 		local type, id, subType, extraID = GetActionInfo(actionID)
 		if( type and id and ( actionID < CONST.POSSESSION_START or actionID > CONST.POSSESSION_END ) ) then
-			-- DB Format: <type>|<id>|<binding>|<name>|<extra ...>
 			-- Save a companion
 			if( type == "companion" ) then
-				local name, spellID, icon, _, _, _, _, companionSpellID = GetCompanionInfo(subType, id)
-				if companionSpellID then
-					set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, companionSpellID, "", name, subType, id)
-				end
-				
-				if self.db.debug then
-					self:Debug(string.format("Saving companion: name=%s, spellID=%s, type=%s, id=%s", name or "nil", companionSpellID or "nil", subType or "nil", id or "nil"))
+				local name, spellID
+				if subType == "MOUNT" then
+					name = GetSpellInfo(id)
+					if name then
+						set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, id, "", name, subType, id)
+						
+						if self.db.debug then
+							self:Debug(string.format("Saving mount: name=%s, spellID=%d", 
+								tostring(name), id))
+						end
+					end
+				else
+					name, spellID, icon = GetCompanionInfo(subType, id)
+					if name then
+						set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+					end
 				end
 			-- Save an equipment set
 			elseif( type == "equipmentset" ) then
@@ -134,7 +141,6 @@ function ABS:SaveProfile(name)
 		end
 	end
 	
-	-- Теперь сохраняем панели ElvUI
 	if IsElvUILoaded() then
 		for bar=7, 10 do
 			for btn=1, 12 do
@@ -144,7 +150,6 @@ function ABS:SaveProfile(name)
 				if elvuiActionID then
 					local type, id, subType, extraID = GetActionInfo(elvuiActionID)
 					if type and id then
-						-- Используем ту же логику сохранения
 						if type == "companion" then
 							local name, spellID, icon, _, _, _, _, companionSpellID = GetCompanionInfo(subType, id)
 							if companionSpellID then
@@ -403,39 +408,80 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 		
 		PlaceAction(i)
 			
-	-- Restore a 3.1 saved companion
 	elseif( type == "companion" ) then
 		local critterName, critterType, critterID = ...
-		local companionSpellID = tonumber(actionID)
+		local spellID = tonumber(actionID)
 		
 		if self.db.debug then
-			self:Debug(string.format("Restoring companion: name=%s, spellID=%s, type=%s", critterName or "nil", companionSpellID or "nil", critterType or "nil"))
+			self:Debug(string.format("Restoring companion: name=%s, spellID=%s, type=%s", 
+				tostring(critterName), tostring(spellID), tostring(critterType)))
 		end
 		
-		-- Найдем правильный ID компаньона по spell ID
-		local numCompanions = GetNumCompanions(critterType)
-		local foundID
-		
-		for j = 1, numCompanions do
-			local _, _, _, _, _, _, _, thisSpellID = GetCompanionInfo(critterType, j)
-			if thisSpellID == companionSpellID then
-				foundID = j
-				break
+		if critterType == "MOUNT" then
+			local macroText = "/cast " .. critterName
+			local macroID
+			
+			for i=1, CONST.MAX_MACROS do
+				local name = GetMacroInfo(i)
+				if name == TEMP_MOUNT_MACRO_NAME then
+					macroID = i
+					EditMacro(macroID, TEMP_MOUNT_MACRO_NAME, 1, macroText)
+					break
+				end
 			end
-		end
-		
-		if foundID then
-			if self.db.debug then
-				self:Debug(string.format("Found companion with ID %s", foundID))
+			
+			if not macroID then
+				local globalNum, charNum = GetNumMacros()
+				
+				if charNum < CONST.MAX_CHAR_MACROS then
+					macroID = CreateMacro(TEMP_MOUNT_MACRO_NAME, 1, macroText, 1, true)
+				elseif globalNum < CONST.MAX_GLOBAL_MACROS then
+					macroID = CreateMacro(TEMP_MOUNT_MACRO_NAME, 1, macroText, nil, false)
+				end
 			end
-			PickupCompanion(critterType, foundID)
+			
+			if macroID then
+				PickupMacro(macroID)
+				PlaceAction(i)
+			else
+				local spellID = select(7, GetSpellInfo(critterName))
+				if spellID then
+					PickupSpell(spellID, BOOKTYPE_SPELL)
+					if GetCursorInfo() == "spell" then
+						PlaceAction(i)
+						return
+					end
+				end
+				
+				table.insert(restoreErrors, string.format(L["Unable to restore mount \"%s\" to slot #%d"], 
+					tostring(critterName), i))
+				ClearCursor()
+				return
+			end
 		else
-			if self.db.debug then
-				self:Debug(string.format("Failed to find companion %s", critterName))
+			local numCompanions = GetNumCompanions(critterType)
+			local foundID
+			
+			for j = 1, numCompanions do
+				local _, _, _, _, _, _, _, thisSpellID = GetCompanionInfo(critterType, j)
+				if thisSpellID == spellID then
+					foundID = j
+					break
+				end
 			end
-			table.insert(restoreErrors, string.format(L["Unable to restore companion \"%s\" to slot #%d, it does not appear to exist yet."], critterName, i))
-			ClearCursor()
-			return
+			
+			if foundID then
+				if self.db.debug then
+					self:Debug(string.format("Found companion with ID %s", tostring(foundID)))
+				end
+				PickupCompanion(critterType, foundID)
+				PlaceAction(i)
+			else
+				table.insert(restoreErrors, string.format(L["Unable to restore companion \"%s\" to slot #%d, it does not appear to exist yet."], 
+					tostring(critterName), i))
+				ClearCursor()
+				return
+			end
 		end
 		
 		PlaceAction(i)

@@ -78,4 +78,5 @@ select(2, ...).locals = {
 	["Are you sure you want to delete profile %s?"] = "Are you sure you want to delete profile %s?",
 	["Delete Profile"] = "Delete Profile",
 	["This action cannot be undone."] = "This action cannot be undone.",
+	["Unable to restore mount \"%s\" to slot #%d"] = "Unable to restore mount \"%s\" to slot #%d",
 }
