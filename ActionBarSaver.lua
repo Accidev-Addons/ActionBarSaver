@@ -151,20 +151,38 @@ function ABS:SaveProfile(name)
 					local type, id, subType, extraID = GetActionInfo(elvuiActionID)
 					if type and id then
 						if type == "companion" then
-							local name, spellID, icon, _, _, _, _, companionSpellID = GetCompanionInfo(subType, id)
-							if companionSpellID then
-								set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, companionSpellID, "", name, subType, id)
-							end
-							
-							if self.db.debug then
-								self:Debug(string.format("Saving companion: name=%s, spellID=%s, type=%s, id=%s", name or "nil", companionSpellID or "nil", subType or "nil", id or "nil"))
+							local name, spellID
+							if subType == "MOUNT" then
+								name = GetSpellInfo(id)
+								if name then
+									set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, id, "", name, subType, id)
+									
+									if self.db.debug then
+										self:Debug(string.format("Saving mount for ElvUI: name=%s, spellID=%d", 
+											tostring(name), id))
+									end
+								end
+							else
+								name, spellID, icon = GetCompanionInfo(subType, id)
+								if name then
+									set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, spellID, "", name, subType, id)
+								end
 							end
 						elseif type == "spell" and id > 0 then
 							local spell, rank = GetSpellName(id, BOOKTYPE_SPELL)
 							if spell then
 								set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, id, "", spell, rank or "", extraID or "")
 							end
-						-- Добавьте остальные типы действий по аналогии
+						elseif type == "equipmentset" then
+							set[actionID] = string.format("%s|%s|%s", type, id, "")
+						elseif type == "item" then
+							set[actionID] = string.format("%s|%d|%s|%s", type, id, "", (GetItemInfo(id)) or "")
+						elseif type == "macro" then
+							local name, icon, macro = GetMacroInfo(id)
+							if name and icon and macro then
+								set[actionID] = string.format("%s|%d|%s|%s|%s|%s", type, actionID, "", 
+									self:CompressText(name), icon, self:CompressText(macro))
+							end
 						end
 					end
 				end
@@ -331,7 +349,6 @@ function ABS:RestoreProfile(name)
 		end
 	end
 
-	-- восстанавливаем панели ElvUI
 	if IsElvUILoaded() then
 		for bar=7, 10 do
 			for btn=1, 12 do
@@ -361,6 +378,14 @@ function ABS:RestoreProfile(name)
 end
 
 function ABS:RestoreAction(i, type, actionID, binding, ...)
+	local isElvUIButton = i > 132 and i <= 180
+	if isElvUIButton and not IsValidElvUIButton(math.floor((i-133)/12) + 7, ((i-133) % 12) + 1) then
+		if self.db.debug then
+			self:Debug(string.format("Skipping invalid ElvUI button: actionID=%d", i))
+		end
+		return
+	end
+	
 	-- Restore a spell
 	if( type == "spell" ) then
 		local spellName, spellRank = ...
@@ -735,4 +760,10 @@ function ABS:Debug(msg)
     if self.db.debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99ABS Debug|r: " .. msg)
     end
+end
+
+local function IsValidElvUIButton(bar, btn)
+    if not IsElvUILoaded() then return false end
+    local button = GetElvUIBarButton("bar"..bar, btn)
+    return button ~= nil
 end
