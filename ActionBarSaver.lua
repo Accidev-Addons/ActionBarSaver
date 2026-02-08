@@ -25,43 +25,12 @@ local PlaceAction = PlaceAction
 local string_split = string.split
 local table_wipe = table.wipe
 
-local function IsElvUILoaded()
-	return IsAddOnLoaded("ElvUI")
-end
-
 local function GetMountSpellID(companionIndex, actionInfoExtraID)
 	if actionInfoExtraID and actionInfoExtraID > 0 then
 		return actionInfoExtraID
 	end
 	local _, _, spellID = GetCompanionInfo("MOUNT", companionIndex)
 	return spellID
-end
-
-local function GetElvUIBarButton(barName, buttonIndex)
-	if not IsElvUILoaded() then
-		return
-	end
-	local E = unpack(ElvUI)
-	local AB = E:GetModule("ActionBars")
-	if not AB or not AB.handledBars[barName] then
-		return
-	end
-	return AB.handledBars[barName].buttons[buttonIndex]
-end
-
-local function GetElvUIActionID(barNumber, buttonIndex)
-	local button = GetElvUIBarButton("bar" .. barNumber, buttonIndex)
-	if not button then
-		return
-	end
-	return button.action
-end
-
-local function IsValidElvUIButton(bar, btn)
-	if not IsElvUILoaded() then
-		return false
-	end
-	return GetElvUIBarButton("bar" .. bar, btn) ~= nil
 end
 
 function ABS:OnInitialize()
@@ -182,72 +151,6 @@ function ABS:SaveProfile(name)
 						icon,
 						self:CompressText(macro)
 					)
-				end
-			end
-		end
-	end
-
-	if IsElvUILoaded() then
-		for bar = 7, 10 do
-			for btn = 1, 12 do
-				local actionID = ((bar - 1) * 12) + btn + 132
-				local elvuiActionID = GetElvUIActionID(bar, btn)
-
-				if elvuiActionID then
-					local type, id, subType, extraID = GetActionInfo(elvuiActionID)
-					if type and id then
-						if type == "companion" then
-							if subType == "MOUNT" then
-								local spellID = GetMountSpellID(id, extraID)
-								local name = spellID and GetSpellInfo(spellID)
-								if name and spellID then
-									set[actionID] =
-										string.format("%s|%d|%s|%s|%s|%d", type, spellID, "", name, subType, spellID)
-									if self.db.debug then
-										self:Debug(
-											string.format(
-												"Saving ElvUI mount slot %d: name=%s spellID=%d",
-												actionID,
-												tostring(name),
-												spellID
-											)
-										)
-									end
-								end
-							else
-								local cName, cSpellID = GetCompanionInfo(subType, id)
-								local spellID = (extraID and extraID > 0) and extraID or cSpellID
-								local name = cName or (spellID and GetSpellInfo(spellID))
-								if name and spellID then
-									set[actionID] =
-										string.format("%s|%d|%s|%s|%s|%d", type, spellID, "", name, subType, spellID)
-								end
-							end
-						elseif type == "spell" and id > 0 then
-							local spell, rank = GetSpellName(id, BOOKTYPE_SPELL)
-							if spell then
-								set[actionID] =
-									string.format("%s|%d|%s|%s|%s|%s", type, id, "", spell, rank or "", extraID or "")
-							end
-						elseif type == "equipmentset" then
-							set[actionID] = string.format("%s|%s|%s", type, id, "")
-						elseif type == "item" then
-							set[actionID] = string.format("%s|%d|%s|%s", type, id, "", (GetItemInfo(id)) or "")
-						elseif type == "macro" then
-							local name, icon, macro = GetMacroInfo(id)
-							if name and icon and macro then
-								set[actionID] = string.format(
-									"%s|%d|%s|%s|%s|%s",
-									type,
-									actionID,
-									"",
-									self:CompressText(name),
-									icon,
-									self:CompressText(macro)
-								)
-							end
-						end
-					end
 				end
 			end
 		end
@@ -411,23 +314,6 @@ function ABS:RestoreProfile(name)
 		end
 	end
 
-	if IsElvUILoaded() then
-		for bar = 7, 10 do
-			for btn = 1, 12 do
-				local actionID = ((bar - 1) * 12) + btn + 132
-				if set[actionID] then
-					local button = GetElvUIBarButton("bar" .. bar, btn)
-					if button then
-						PickupAction(button.action)
-						ClearCursor()
-
-						self:RestoreAction(button.action, string.split("|", set[actionID]))
-					end
-				end
-			end
-		end
-	end
-
 	SetCVar("Sound_EnableAllSound", soundToggle)
 
 	if #restoreErrors == 0 then
@@ -444,14 +330,6 @@ function ABS:RestoreProfile(name)
 end
 
 function ABS:RestoreAction(i, type, actionID, binding, ...)
-	local isElvUIButton = i > 132 and i <= 180
-	if isElvUIButton and not IsValidElvUIButton(math.floor((i - 133) / 12) + 7, ((i - 133) % 12) + 1) then
-		if self.db.debug then
-			self:Debug(string.format("Skipping invalid ElvUI button: actionID=%d", i))
-		end
-		return
-	end
-
 	-- Restore a spell
 	if type == "spell" then
 		local spellName, spellRank = ...
