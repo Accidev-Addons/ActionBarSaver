@@ -10,10 +10,7 @@ local CONST = {
 	MAX_MACROS = 54,
 	MAX_CHAR_MACROS = 18,
 	MAX_GLOBAL_MACROS = 36,
-	MAX_ACTION_BUTTONS = 360,
-	POSSESSION_START = 121,
-	POSSESSION_END = 132,
-	TEMP_MOUNT_MACRO_NAME = "ABS_Mount",
+	MAX_ACTION_ID = 120,
 }
 
 local GetSpellName = GetSpellName
@@ -25,12 +22,37 @@ local PlaceAction = PlaceAction
 local string_split = string.split
 local table_wipe = table.wipe
 
+local function IsValidSlot(actionID)
+	actionID = tonumber(actionID)
+
+	return actionID and actionID >= 1 and actionID <= CONST.MAX_ACTION_ID
+end
+
 local function GetMountSpellID(companionIndex, actionInfoExtraID)
 	if actionInfoExtraID and actionInfoExtraID > 0 then
 		return actionInfoExtraID
 	end
 	local _, _, spellID = GetCompanionInfo("MOUNT", companionIndex)
 	return spellID
+end
+
+function ABS:PruneLegacySlots()
+	local removed = 0
+
+	for _, classSets in pairs(self.db.sets) do
+		for _, set in pairs(classSets) do
+			for actionID in pairs(set) do
+				if not IsValidSlot(actionID) then
+					set[actionID] = nil
+					removed = removed + 1
+				end
+			end
+		end
+	end
+
+	if removed > 0 then
+		self:Debug(string.format("Pruned %d saved entries pointing at action slots that do not exist.", removed))
+	end
 end
 
 function ABS:OnInitialize()
@@ -58,6 +80,8 @@ function ABS:OnInitialize()
 	self.db = ActionBarSaverDB
 
 	playerClass = select(2, UnitClass("player"))
+
+	self:PruneLegacySlots()
 end
 
 function ABS:CompressText(text)
@@ -79,11 +103,11 @@ function ABS:SaveProfile(name)
 	self.db.sets[playerClass][name] = self.db.sets[playerClass][name] or {}
 	local set = self.db.sets[playerClass][name]
 
-	for actionID = 1, CONST.MAX_ACTION_BUTTONS do
+	for actionID = 1, CONST.MAX_ACTION_ID do
 		set[actionID] = nil
 
 		local type, id, subType, extraID = GetActionInfo(actionID)
-		if type and id and (actionID < CONST.POSSESSION_START or actionID > CONST.POSSESSION_END) then
+		if type and id then
 			if type == "companion" then
 				if subType == "MOUNT" then
 					local spellID = GetMountSpellID(id, extraID)
@@ -299,18 +323,16 @@ function ABS:RestoreProfile(name)
 	-- Turn sound off
 	SetCVar("Sound_EnableAllSound", 0)
 
-	for i = 1, CONST.MAX_ACTION_BUTTONS do
-		if i < CONST.POSSESSION_START or i > CONST.POSSESSION_END then
-			local type, id = GetActionInfo(i)
+	for i = 1, CONST.MAX_ACTION_ID do
+		local type, id = GetActionInfo(i)
 
-			if id or type then
-				PickupAction(i)
-				ClearCursor()
-			end
+		if id or type then
+			PickupAction(i)
+			ClearCursor()
+		end
 
-			if set[i] then
-				self:RestoreAction(i, string.split("|", set[i]))
-			end
+		if set[i] then
+			self:RestoreAction(i, string.split("|", set[i]))
 		end
 	end
 
@@ -330,6 +352,11 @@ function ABS:RestoreProfile(name)
 end
 
 function ABS:RestoreAction(i, type, actionID, binding, ...)
+	if not IsValidSlot(i) then
+		self:Debug(string.format("Skipping out of range slot %s", tostring(i)))
+		return
+	end
+
 	-- Restore a spell
 	if type == "spell" then
 		local spellName, spellRank = ...
