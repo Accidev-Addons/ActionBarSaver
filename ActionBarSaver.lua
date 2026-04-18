@@ -169,7 +169,7 @@ function ABS:SaveProfile(name)
 					set[actionID] = string.format(
 						"%s|%d|%s|%s|%s|%s",
 						type,
-						actionID,
+						id,
 						"",
 						self:CompressText(name),
 						icon,
@@ -184,67 +184,33 @@ function ABS:SaveProfile(name)
 end
 
 function ABS:FindMacro(id, name, data)
-	if macroCache[id] == data then
+	id = tonumber(id)
+
+	if id and macroCache[id] == data then
 		return id
 	end
 
-	for id, currentMacro in pairs(macroCache) do
+	for index, currentMacro in pairs(macroCache) do
 		if currentMacro == data then
-			return id
+			return index
 		end
 	end
 
-	if macroNameCache[name] then
+	if name and macroNameCache[name] then
 		return macroNameCache[name]
 	end
 
 	return nil
 end
 
-function ABS:RestoreMacros(set)
-	local perCharacter = true
-	for id, data in pairs(set) do
-		local type, id, binding, macroName, macroIcon, macroData = string.split("|", data)
-		if type == "macro" then
-			-- Do we already have a macro?
-			local macroID = self:FindMacro(id, macroName, macroData)
-			if not macroID then
-				local globalNum, charNum = GetNumMacros()
-				-- Make sure we aren't at the limit
-				if globalNum == CONST.MAX_GLOBAL_MACROS and charNum == CONST.MAX_CHAR_MACROS then
-					table.insert(
-						restoreErrors,
-						L["Unable to restore macros, you already have 18 global and 18 per character ones created."]
-					)
-					break
-
-				elseif charNum == CONST.MAX_CHAR_MACROS then
-					perCharacter = false
-				end
-
-				if not iconCache then
-					iconCache = {}
-					for i = 1, GetNumMacroIcons() do
-						iconCache[(GetMacroIconInfo(i))] = i
-					end
-				end
-
-				macroName = self:UncompressText(macroName)
-
-				CreateMacro(
-					macroName == "" and " " or macroName,
-					iconCache[macroIcon] or 1,
-					self:UncompressText(macroData),
-					nil,
-					perCharacter
-				)
-			end
-		end
-	end
-
+function ABS:CacheMacros()
 	local blacklist = {}
+
+	table_wipe(macroCache)
+	table_wipe(macroNameCache)
+
 	for i = 1, CONST.MAX_MACROS do
-		local name, icon, macro = GetMacroInfo(i)
+		local name, _, macro = GetMacroInfo(i)
 
 		if name then
 			if macroNameCache[name] then
@@ -259,6 +225,48 @@ function ABS:RestoreMacros(set)
 	end
 end
 
+function ABS:RestoreMacros(set)
+	local perCharacter = true
+
+	for _, data in pairs(set) do
+		local type, macroID, binding, macroName, macroIcon, macroData = string_split("|", data)
+
+		if type == "macro" and not self:FindMacro(macroID, macroName, macroData) then
+			local globalNum, charNum = GetNumMacros()
+
+			-- Make sure we aren't at the limit
+			if globalNum >= CONST.MAX_GLOBAL_MACROS and charNum >= CONST.MAX_CHAR_MACROS then
+				table.insert(
+					restoreErrors,
+					L["Unable to restore macros, you already have 18 global and 18 per character ones created."]
+				)
+				break
+			elseif charNum >= CONST.MAX_CHAR_MACROS then
+				perCharacter = false
+			end
+
+			if not iconCache then
+				iconCache = {}
+				for i = 1, GetNumMacroIcons() do
+					iconCache[(GetMacroIconInfo(i))] = i
+				end
+			end
+
+			macroName = self:UncompressText(macroName)
+
+			CreateMacro(
+				macroName == "" and " " or macroName,
+				iconCache[macroIcon] or 1,
+				self:UncompressText(macroData),
+				nil,
+				perCharacter
+			)
+		end
+	end
+
+	self:CacheMacros()
+end
+
 -- Restore a saved profile
 function ABS:RestoreProfile(name)
 	local set = self.db.sets[playerClass][name]
@@ -270,9 +278,7 @@ function ABS:RestoreProfile(name)
 		return
 	end
 
-	table.wipe(macroCache)
 	table.wipe(spellCache)
-	table.wipe(macroNameCache)
 
 	-- Cache spells
 	for book = 1, MAX_SKILLLINE_TABS do
@@ -292,23 +298,7 @@ function ABS:RestoreProfile(name)
 		end
 	end
 
-	-- Cache macros
-	local blacklist = {}
-	for i = 1, CONST.MAX_MACROS do
-		local name, icon, macro = GetMacroInfo(i)
-
-		if name then
-			-- If there are macros with the same name, then blacklist and don't look by name
-			if macroNameCache[name] then
-				blacklist[name] = true
-				macroNameCache[name] = i
-			elseif not blacklist[name] then
-				macroNameCache[name] = i
-			end
-		end
-
-		macroCache[i] = macro and self:CompressText(macro) or nil
-	end
+	self:CacheMacros()
 
 	-- Check if we need to restore any missing macros
 	if self.db.macro then
@@ -507,13 +497,29 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 	-- Restore a macro
 	elseif type == "macro" then
 		local name, _, content = ...
-		PickupMacro(self:FindMacro(actionID, name, content or -1))
+		local macroID = self:FindMacro(actionID, name, content)
+
+		if not macroID then
+			table.insert(
+				restoreErrors,
+				string.format(
+					L["Unable to restore macro id #%d to slot #%d, it appears to have been deleted."],
+					tonumber(actionID) or 0,
+					i
+				)
+			)
+			ClearCursor()
+			return
+		end
+
+		PickupMacro(macroID)
+
 		if GetCursorInfo() ~= type then
 			table.insert(
 				restoreErrors,
 				string.format(
 					L["Unable to restore macro id #%d to slot #%d, it appears to have been deleted."],
-					actionID,
+					tonumber(actionID) or 0,
 					i
 				)
 			)
