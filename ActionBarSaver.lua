@@ -60,6 +60,7 @@ function ABS:OnInitialize()
 		macro = false,
 		checkCount = false,
 		restoreRank = true,
+		autoSave = false,
 		debug = false,
 		spellSubs = {},
 		sets = {},
@@ -225,6 +226,31 @@ function ABS:CacheMacros()
 	end
 end
 
+function ABS:CacheSpells()
+	table_wipe(spellCache)
+
+	for book = 1, MAX_SKILLLINE_TABS do
+		local _, _, offset, numSpells = GetSpellTabInfo(book)
+
+		if offset and numSpells then
+			for i = 1, numSpells do
+				local index = offset + i
+				local spell, rank = GetSpellName(index, BOOKTYPE_SPELL)
+
+				if spell then
+					-- This way we restore the max rank of spells
+					spellCache[spell] = index
+					spellCache[string.lower(spell)] = index
+
+					if rank and rank ~= "" then
+						spellCache[spell .. rank] = index
+					end
+				end
+			end
+		end
+	end
+end
+
 function ABS:RestoreMacros(set)
 	local perCharacter = true
 
@@ -278,26 +304,9 @@ function ABS:RestoreProfile(name)
 		return
 	end
 
-	table.wipe(spellCache)
+	table_wipe(restoreErrors)
 
-	-- Cache spells
-	for book = 1, MAX_SKILLLINE_TABS do
-		local _, _, offset, numSpells = GetSpellTabInfo(book)
-
-		for i = 1, numSpells do
-			local index = offset + i
-			local spell, rank = GetSpellName(index, BOOKTYPE_SPELL)
-
-			-- This way we restore the max rank of spells
-			spellCache[spell] = index
-			spellCache[string.lower(spell)] = index
-
-			if rank and rank ~= "" then
-				spellCache[spell .. rank] = index
-			end
-		end
-	end
-
+	self:CacheSpells()
 	self:CacheMacros()
 
 	-- Check if we need to restore any missing macros
@@ -310,23 +319,35 @@ function ABS:RestoreProfile(name)
 
 	-- Save current sound setting
 	local soundToggle = GetCVar("Sound_EnableAllSound")
-	-- Turn sound off
-	SetCVar("Sound_EnableAllSound", 0)
-
-	for i = 1, CONST.MAX_ACTION_ID do
-		local type, id = GetActionInfo(i)
-
-		if id or type then
-			PickupAction(i)
-			ClearCursor()
-		end
-
-		if set[i] then
-			self:RestoreAction(i, string.split("|", set[i]))
-		end
+	if soundToggle then
+		SetCVar("Sound_EnableAllSound", 0)
 	end
 
-	SetCVar("Sound_EnableAllSound", soundToggle)
+	local ok, err = pcall(function()
+		for i = 1, CONST.MAX_ACTION_ID do
+			local type, id = GetActionInfo(i)
+
+			if id or type then
+				PickupAction(i)
+				ClearCursor()
+			end
+
+			if set[i] then
+				self:RestoreAction(i, string.split("|", set[i]))
+			end
+		end
+	end)
+
+	ClearCursor()
+
+	if soundToggle then
+		SetCVar("Sound_EnableAllSound", soundToggle)
+	end
+
+	if not ok then
+		self:Print(tostring(err))
+		return
+	end
 
 	if #restoreErrors == 0 then
 		self:Print(string.format(L["Restored profile %s!"], name))
@@ -383,12 +404,25 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 		PlaceAction(i)
 	-- Restore an equipment set button
 	elseif type == "equipmentset" then
-		local slotID = -1
-		for i = 1, GetNumEquipmentSets() do
-			if GetEquipmentSetInfo(i) == actionID then
-				slotID = i
+		local slotID
+		for index = 1, GetNumEquipmentSets() do
+			if GetEquipmentSetInfo(index) == actionID then
+				slotID = index
 				break
 			end
+		end
+
+		if not slotID then
+			table.insert(
+				restoreErrors,
+				string.format(
+					L['Unable to restore equipment set "%s" to slot #%d, it does not appear to exist anymore.'],
+					tostring(actionID),
+					i
+				)
+			)
+			ClearCursor()
+			return
 		end
 
 		PickupEquipmentSet(slotID)
@@ -477,10 +511,11 @@ function ABS:RestoreAction(i, type, actionID, binding, ...)
 		PlaceAction(i)
 	-- Restore an item
 	elseif type == "item" then
+		local itemName = ...
+
 		PickupItem(actionID)
 
 		if GetCursorInfo() ~= type then
-			local itemName = select(i, ...)
 			table.insert(
 				restoreErrors,
 				string.format(
@@ -569,8 +604,6 @@ SlashCmdList["ABS"] = function(msg)
 		self:Print(string.format(L['Spells "%s" and "%s" are now linked.'], first, second))
 
 	elseif cmd == "restore" and arg ~= "" then
-		table_wipe(restoreErrors)
-
 		if not self.db.sets[playerClass][arg] then
 			self:Print(
 				string.format(L['Cannot restore profile "%s", you can only restore profiles saved to your class.'], arg)
@@ -685,6 +718,11 @@ SlashCmdList["ABS"] = function(msg)
 			self:Print(L["Auto restoring highest spell rank is now disabled!"])
 		end
 
+	-- Autosave on logout
+	elseif cmd == "autosave" then
+		self.db.autoSave = not self.db.autoSave
+		self:Print(self.db.autoSave and "AutoSave on logout: enabled" or "AutoSave on logout: disabled")
+
 	-- Halp
 	elseif cmd == "debug" then
 		self.db.debug = not self.db.debug
@@ -724,7 +762,7 @@ frame:SetScript("OnEvent", function(self, event, addon)
 		ABS:OnInitialize()
 		self:UnregisterEvent("ADDON_LOADED")
 	elseif event == "PLAYER_LOGOUT" then
-		if ABS.db and ABS.db.autoSave then
+		if ABS.db and ABS.db.autoSave and playerClass then
 			ABS:SaveProfile("AutoSave")
 		end
 	end
@@ -753,7 +791,7 @@ function ABS:DeleteProfile(name)
 end
 
 function ABS:Debug(msg)
-	if self.db.debug then
+	if self.db and self.db.debug then
 		DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99ABS Debug|r: " .. msg)
 	end
 end
