@@ -141,7 +141,7 @@ function ABS:SerializeAction(actionID)
 			spellID = GetMountSpellID(id, extraID)
 			name = spellID and GetSpellInfo(spellID)
 		else
-			local cName, cSpellID = GetCompanionInfo(subType, id)
+			local _, cName, cSpellID = GetCompanionInfo(subType, id)
 			spellID = (extraID and extraID > 0) and extraID or cSpellID
 			name = cName or (spellID and GetSpellInfo(spellID))
 		end
