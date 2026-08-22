@@ -409,7 +409,7 @@ function ABS:RestoreAction(actionID, kind, id, binding, ...)
 		PlaceAction(actionID)
 	elseif kind == "companion" then
 		local critterName, critterType, critterSpellID = ...
-		local spellID = tonumber(id) or tonumber(critterSpellID)
+		local spellID = tonumber(critterSpellID) or tonumber(id)
 		local failMessage = critterType == "MOUNT" and L['Unable to restore mount "%s" to slot #%d']
 			or L['Unable to restore companion "%s" to slot #%d, it does not appear to exist yet.']
 
@@ -420,7 +420,7 @@ function ABS:RestoreAction(actionID, kind, id, binding, ...)
 		for j = 1, GetNumCompanions(critterType) do
 			local _, cName, thisSpellID = GetCompanionInfo(critterType, j)
 
-			if thisSpellID == spellID or (spellID == nil and cName == critterName) then
+			if thisSpellID == spellID or (critterName ~= "" and cName == critterName) then
 				foundIndex = j
 				break
 			end
