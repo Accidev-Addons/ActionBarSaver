@@ -258,7 +258,7 @@ function ABS:CacheSpells()
 end
 
 function ABS:RestoreMacros(set)
-	local perCharacter = true
+	local perCharacter = false
 
 	for _, data in pairs(set) do
 		local kind, macroID, _, macroName, macroIcon, macroData = string_split("|", data)
@@ -267,23 +267,27 @@ function ABS:RestoreMacros(set)
 			local globalNum, charNum = GetNumMacros()
 
 			if globalNum >= CONST.MAX_GLOBAL_MACROS and charNum >= CONST.MAX_CHAR_MACROS then
-				tinsert(restoreErrors, L["Unable to restore macros, you already have 18 global and 18 per character ones created."])
+				tinsert(restoreErrors, format(L["Unable to restore macros, you already have %d global and %d per character ones created."], CONST.MAX_GLOBAL_MACROS, CONST.MAX_CHAR_MACROS))
 				break
-			elseif charNum >= CONST.MAX_CHAR_MACROS then
-				perCharacter = false
+			elseif globalNum >= CONST.MAX_GLOBAL_MACROS then
+				perCharacter = true
 			end
 
 			if not iconCache then
 				iconCache = {}
 
 				for i = 1, GetNumMacroIcons() do
-					iconCache[(GetMacroIconInfo(i))] = i
+					local iconPath = GetMacroIconInfo(i)
+
+					if iconPath then
+						iconCache[lower(iconPath)] = i
+					end
 				end
 			end
 
 			macroName = self:UncompressText(macroName)
 
-			CreateMacro(macroName == "" and " " or macroName, iconCache[macroIcon] or 1, self:UncompressText(macroData), nil, perCharacter)
+			CreateMacro(macroName == "" and " " or macroName, iconCache[lower(macroIcon or "")] or 1, self:UncompressText(macroData), perCharacter)
 		end
 	end
 

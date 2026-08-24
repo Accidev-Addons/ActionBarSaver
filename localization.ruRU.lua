@@ -43,7 +43,7 @@ select(2, ...).locals = {
 	
 	["Miscellaneous"] = "Разное",
 	["Unable to restore companion \"%s\" to slot #%d, it does not appear to exist yet."] = "Невозможно восстановить питомца \"%s\" в слот #%d, похоже, он еще не существует.",
-	["Unable to restore macros, you already have 18 global and 18 per character ones created."] = "Невозможно восстановить макросы, у вас уже создано 18 глобальных и 18 персональных макросов.",
+	["Unable to restore macros, you already have %d global and %d per character ones created."] = "Невозможно восстановить макросы, у вас уже создано %d глобальных и %d персональных макросов.",
 	["Cannot restore profile \"%s\", you can only restore profiles saved to your class."] = "Невозможно восстановить профиль \"%s\", вы можете восстанавливать только профили, сохраненные для вашего класса.",
 	
 	-- Classes
