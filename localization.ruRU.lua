@@ -1,3 +1,5 @@
+if GetLocale() ~= "ruRU" then return end
+
 select(2, ...).locals = {
 	["Your DB has been upgraded to the new storage format."] = "Ваша БД была обновлена до нового формата хранения.",
 	["Unable to restore equipment set \"%s\" to slot #%d, it does not appear to exist anymore."] = "Невозможно восстановить комплект экипировки \"%s\" в слот #%d, похоже, он больше не существует.",

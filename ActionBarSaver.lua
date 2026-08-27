@@ -4,6 +4,7 @@ local ABS = ActionBarSaver
 local L = ABS.locals
 
 local restoreErrors, spellCache, macroCache, macroNameCache = {}, {}, {}, {}
+local spellBookCache = {}
 local iconCache, playerClass
 
 local CONST = {
@@ -11,6 +12,7 @@ local CONST = {
 	MAX_CHAR_MACROS = 18,
 	MAX_GLOBAL_MACROS = 36,
 	MAX_ACTION_ID = 120,
+	MAX_PET_SPELLS = 1024,
 }
 
 local GetSpellName = GetSpellName
@@ -159,7 +161,7 @@ function ABS:SerializeAction(actionID)
 	elseif kind == "item" then
 		return format("%s|%d|%s|%s", kind, id, "", (GetItemInfo(id)) or "")
 	elseif kind == "spell" and id > 0 then
-		local spell, rank = GetSpellName(id, BOOKTYPE_SPELL)
+		local spell, rank = GetSpellName(id, subType or BOOKTYPE_SPELL)
 		if not spell then
 			return nil
 		end
@@ -235,6 +237,7 @@ end
 
 function ABS:CacheSpells()
 	table_wipe(spellCache)
+	table_wipe(spellBookCache)
 
 	for book = 1, MAX_SKILLLINE_TABS do
 		local _, _, offset, numSpells = GetSpellTabInfo(book)
@@ -247,12 +250,38 @@ function ABS:CacheSpells()
 				if spell then
 					spellCache[spell] = index
 					spellCache[lower(spell)] = index
+					spellBookCache[spell] = BOOKTYPE_SPELL
+					spellBookCache[lower(spell)] = BOOKTYPE_SPELL
 
 					if rank and rank ~= "" then
 						spellCache[spell .. rank] = index
+						spellBookCache[spell .. rank] = BOOKTYPE_SPELL
 					end
 				end
 			end
+		end
+	end
+
+	for index = 1, CONST.MAX_PET_SPELLS do
+		local spell, rank = GetSpellName(index, BOOKTYPE_PET)
+
+		if not spell then
+			break
+		end
+
+		if not spellCache[spell] then
+			spellCache[spell] = index
+			spellBookCache[spell] = BOOKTYPE_PET
+		end
+
+		if not spellCache[lower(spell)] then
+			spellCache[lower(spell)] = index
+			spellBookCache[lower(spell)] = BOOKTYPE_PET
+		end
+
+		if rank and rank ~= "" and not spellCache[spell .. rank] then
+			spellCache[spell .. rank] = index
+			spellBookCache[spell .. rank] = BOOKTYPE_PET
 		end
 	end
 end
@@ -364,9 +393,9 @@ function ABS:RestoreAction(actionID, kind, id, binding, ...)
 		local spellName, spellRank = ...
 
 		if (self.db.restoreRank or spellRank == "") and spellCache[spellName] then
-			PickupSpell(spellCache[spellName], BOOKTYPE_SPELL)
+			PickupSpell(spellCache[spellName], spellBookCache[spellName] or BOOKTYPE_SPELL)
 		elseif spellRank ~= "" and spellCache[spellName .. spellRank] then
-			PickupSpell(spellCache[spellName .. spellRank], BOOKTYPE_SPELL)
+			PickupSpell(spellCache[spellName .. spellRank], spellBookCache[spellName .. spellRank] or BOOKTYPE_SPELL)
 		end
 
 		if GetCursorInfo() ~= kind then
